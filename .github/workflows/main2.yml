@@ -1,0 +1,39 @@
+name: Scan code with Snyk and Archive if Safe
+on: push
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Run Snyk to check for vulnerabilities
+        id: snyk # ID necesario para verificar el resultado (outcome) más tarde
+        uses: snyk/actions/node@master
+        continue-on-error: true # Permite que el flujo continúe para subir el reporte SARIF aunque falle
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --sarif-file-output=snyk.sarif --all-projects
+
+      - name: Upload result to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: snyk.sarif
+
+      # Nuevo paso: Crear el ZIP solo si el escaneo de Snyk fue exitoso
+      - name: Zip Source Code
+        if: steps.snyk.outcome == 'success'
+        run: |
+          # Comprime todo el directorio actual, excluyendo la carpeta .git y el reporte sarif
+          zip -r source_code.zip . -x "*.git*" "snyk.sarif"
+
+      # Nuevo paso: Subir el ZIP como un artefacto de GitHub
+      - name: Upload Safe Code Artifact
+        if: steps.snyk.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: safe-source-code
+          path: source_code.zip
+          retention-days: 5
